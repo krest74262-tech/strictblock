@@ -11,34 +11,50 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.7"
-      - name: Create project structures
-        run: |
-          mkdir -p StrictBlock/app/src/main/res/xml
-          mkdir -p StrictBlock/app/src/main/java/com/example/strictblock
-          mkdir -p StrictBlock/app/src/main/res/values
 
-          cat > StrictBlock/settings.gradle.kts <<'EOF'
+      - name: Create Android Project
+        run: |
+          mkdir -p app/src/main/res/xml
+          mkdir -p app/src/main/java/com/example/strictblock
+          mkdir -p app/src/main/res/values
+
+          # Create settings.gradle
+          cat > settings.gradle <<'EOF'
           rootProject.name = "StrictBlock"
-          include(":app")
+          include ':app'
           EOF
 
-          cat > StrictBlock/app/build.gradle.kts <<'EOF'
-          plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
+          # Create build.gradle (Project level)
+          cat > build.gradle <<'EOF'
+          buildscript {
+              repositories { google() }
+              dependencies { classpath 'com.android.tools.build:gradle:8.2.2' }
+          }
+          allprojects { repositories { google() } }
+          EOF
+
+          # Create app/build.gradle
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
           android {
-              namespace = "com.example.strictblock"
-              compileSdk = 34
-              defaultConfig { applicationId = "com.example.strictblock"; minSdk = 26; targetSdk = 34; versionCode = 1; versionName = "1.0" }
-              compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
-              kotlinOptions { jvmTarget = "17" }
+              namespace "com.example.strictblock"
+              compileSdk 34
+              defaultConfig {
+                  applicationId "com.example.strictblock"
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0"
+              }
           }
           EOF
 
-          cat > StrictBlock/app/src/main/AndroidManifest.xml <<'EOF'
+          # Create AndroidManifest.xml
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://github.com">
-              <application android:label="الحظر الصارم" android:supportsRtl="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
+              <application android:label="الحظر الصارم" android:supportsRtl="true">
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
@@ -55,7 +71,8 @@ jobs:
           </manifest>
           EOF
 
-          cat > StrictBlock/app/src/main/java/com/example/strictblock/BlockService.kt <<'EOF'
+          # Create BlockService.kt
+          cat > app/src/main/java/com/example/strictblock/BlockService.kt <<'EOF'
           package com.example.strictblock
           import android.accessibilityservice.AccessibilityService
           import android.view.accessibility.AccessibilityEvent
@@ -65,7 +82,8 @@ jobs:
           }
           EOF
 
-          cat > StrictBlock/app/src/main/java/com/example/strictblock/MainActivity.kt <<'EOF'
+          # Create MainActivity.kt
+          cat > app/src/main/java/com/example/strictblock/MainActivity.kt <<'EOF'
           package com.example.strictblock
           import android.app.Activity
           import android.os.Bundle
@@ -79,26 +97,27 @@ jobs:
           }
           EOF
 
-          cat > StrictBlock/app/src/main/res/values/strings.xml <<'EOF'
+          # Create strings.xml
+          cat > app/src/main/res/values/strings.xml <<'EOF'
           <resources><string name="desc">خدمة الحظر الصارم</string></resources>
           EOF
 
-          cat > StrictBlock/app/src/main/res/xml/accessibility_config.xml <<'EOF'
+          # Create accessibility_config.xml
+          cat > app/src/main/res/xml/accessibility_config.xml <<'EOF'
           <accessibility-service xmlns:android="http://github.com"
               android:accessibilityEventTypes="typeWindowStateChanged"
               android:accessibilityFeedbackType="feedbackGeneric"
               android:description="@string/desc" />
           EOF
 
-      - name: Build APK
-        run: |
-          cd StrictBlock
-          gradle wrapper --gradle-version 8.7
-          chmod +x gradlew
-          ./gradlew assembleDebug
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build APK with Gradle
+        run: gradle assembleDebug
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: StrictBlock-APK
-          path: StrictBlock/app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/*.apk
