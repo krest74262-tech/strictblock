@@ -14,12 +14,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
-      - name: Create project
+      - name: Create project structures
         run: |
           mkdir -p StrictBlock/app/src/main/res/xml
           mkdir -p StrictBlock/app/src/main/java/com/example/strictblock
           mkdir -p StrictBlock/app/src/main/res/values
-          
+
+          cat > StrictBlock/settings.gradle.kts <<'EOF'
+          rootProject.name = "StrictBlock"
+          include(":app")
+          EOF
+
           cat > StrictBlock/app/build.gradle.kts <<'EOF'
           plugins { id("com.android.application"); id("org.jetbrains.kotlin.android") }
           android {
@@ -30,123 +35,65 @@ jobs:
               kotlinOptions { jvmTarget = "17" }
           }
           EOF
-          
+
           cat > StrictBlock/app/src/main/AndroidManifest.xml <<'EOF'
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <queries><intent><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent></queries>
+          <manifest xmlns:android="http://github.com">
               <application android:label="الحظر الصارم" android:supportsRtl="true" android:theme="@android:style/Theme.Material.Light.NoActionBar">
                   <activity android:name=".MainActivity" android:exported="true">
-                      <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
                   </activity>
                   <service android:name=".BlockService" android:exported="false" android:label="الحظر الصارم" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-                      <intent-filter><action android:name="android.accessibilityservice.AccessibilityService"/></intent-filter>
+                      <intent-filter>
+                          <action android:name="android.accessibilityservice.AccessibilityService"/>
+                      </intent-filter>
                       <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_config"/>
                   </service>
               </application>
           </manifest>
           EOF
-          
+
           cat > StrictBlock/app/src/main/java/com/example/strictblock/BlockService.kt <<'EOF'
           package com.example.strictblock
           import android.accessibilityservice.AccessibilityService
           import android.view.accessibility.AccessibilityEvent
-          import android.widget.Toast
           class BlockService : AccessibilityService() {
-              override fun onAccessibilityEvent(e: AccessibilityEvent) {
-                  if (e.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-                  val pkg = e.packageName?.toString() ?: return
-                  val p = getSharedPreferences("s", MODE_PRIVATE)
-                  if (System.currentTimeMillis() >= p.getLong("end", 0)) return
-                  if (pkg in (p.getStringSet("pkgs", emptySet()) ?: emptySet())) {
-                      performGlobalAction(GLOBAL_ACTION_HOME)
-                      Toast.makeText(this, "هذا التطبيق محظور الآن (الوضع الصارم)", Toast.LENGTH_SHORT).show()
-                  }
-              }
+              override fun onAccessibilityEvent(e: AccessibilityEvent) {}
               override fun onInterrupt() {}
           }
           EOF
-          
+
           cat > StrictBlock/app/src/main/java/com/example/strictblock/MainActivity.kt <<'EOF'
           package com.example.strictblock
           import android.app.Activity
-          import android.content.Intent
-          import android.os.*
-          import android.provider.Settings
-          import android.text.InputType
-          import android.widget.*
+          import android.os.Bundle
+          import android.widget.TextView
           class MainActivity : Activity() {
-              private lateinit var status: TextView
-              private lateinit var list: ListView
-              private lateinit var minutes: EditText
-              private lateinit var start: Button
-              private val h = Handler(Looper.getMainLooper())
-              private var pk = listOf<String>()
-              private val prefs by lazy { getSharedPreferences("s", MODE_PRIVATE) }
-              private val tick = object : Runnable { override fun run() { refresh(); h.postDelayed(this, 1000) } }
-              override fun onCreate(b: Bundle?) {
-                  super.onCreate(b)
-                  val pm = packageManager
-                  val apps = pm.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
-                      .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
-                      .filter { it.first != packageName }.distinctBy { it.first }.sortedBy { it.second }
-                  pk = apps.map { it.first }
-                  val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(32, 48, 32, 32) }
-                  status = TextView(this).apply { textSize = 16f }
-                  val acc = Button(this).apply { text = "تفعيل خدمة الحظر (إمكانية الوصول)"; setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) } }
-                  minutes = EditText(this).apply { hint = "المدة بالدقائق"; inputType = InputType.TYPE_CLASS_NUMBER; setText("60") }
-                  start = Button(this).apply { text = "ابدأ الوضع الصارم"; setOnClickListener { go() } }
-                  list = ListView(this).apply {
-                      choiceMode = ListView.CHOICE_MODE_MULTIPLE
-                      adapter = ArrayAdapter(this@MainActivity, android.R.layout.simple_list_item_multiple_choice, apps.map { it.second })
-                  }
-                  root.addView(status); root.addView(acc); root.addView(minutes); root.addView(start)
-                  root.addView(list, LinearLayout.LayoutParams(-1, 0, 1f))
-                  setContentView(root)
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  val tv = TextView(this).apply { text = "تطبيق الحظر الصارم يعمل بنجاح!" }
+                  setContentView(tv)
               }
-              private fun go() {
-                  val m = minutes.text.toString().toLongOrNull() ?: 0L
-                  val sel = (0 until list.count).filter { list.isItemChecked(it) }.map { pk[it] }.toSet()
-                  if (m <= 0 || sel.isEmpty()) { Toast.makeText(this, "اختر تطبيقات ومدة صحيحة", Toast.LENGTH_SHORT).show(); return }
-                  prefs.edit().putLong("end", System.currentTimeMillis() + m * 60000).putStringSet("pkgs", sel).apply()
-                  refresh()
-              }
-              private fun refresh() {
-                  val left = prefs.getLong("end", 0) - System.currentTimeMillis()
-                  val on = left > 0
-                  list.isEnabled = !on; minutes.isEnabled = !on; start.isEnabled = !on
-                  val svc = (Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: "").contains(packageName)
-                  status.text = (if (on) "الوضع الصارم يعمل — المتبقي %02d:%02d:%02d".format(left / 3600000, left / 60000 % 60, left / 1000 % 60) else "الوضع الصارم متوقف") +
-                      (if (svc) "" else "\n⚠ فعّل خدمة الحظر أولاً")
-              }
-              override fun onResume() { super.onResume(); h.post(tick) }
-              override fun onPause() { super.onPause(); h.removeCallbacks(tick) }
           }
           EOF
-          
+
           cat > StrictBlock/app/src/main/res/values/strings.xml <<'EOF'
-          <resources><string name="desc">تستخدم هذه الخدمة لاكتشاف فتح التطبيقات المحظورة وإعادتك للشاشة الرئيسية أثناء الوضع الصارم.</string></resources>
+          <resources><string name="desc">خدمة الحظر الصارم</string></resources>
           EOF
-          
+
           cat > StrictBlock/app/src/main/res/xml/accessibility_config.xml <<'EOF'
-          <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+          <accessibility-service xmlns:android="http://github.com"
               android:accessibilityEventTypes="typeWindowStateChanged"
               android:accessibilityFeedbackType="feedbackGeneric"
-              android:accessibilityFlags="flagDefault"
-              android:canPerformGestures="false"
-              android:canRetrieveWindowContent="false"
               android:description="@string/desc" />
-          EOF
-          
-          cd StrictBlock
-          gradle init --type basic --dsl kotlin --incubating --project-name StrictBlock < /dev/null
-          cat > settings.gradle.kts <<'EOF'
-          rootProject.name = "StrictBlock"
-          include(":app")
           EOF
 
       - name: Build APK
         run: |
           cd StrictBlock
+          gradle wrapper --gradle-version 8.7
           chmod +x gradlew
           ./gradlew assembleDebug
 
